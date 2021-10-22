@@ -133,6 +133,14 @@ class LabelConfig:
 
 
 @dataclass
+class IOConfig:
+
+    output_dir: str = r"./"
+    fname_template: str = r"{sample_name}"
+    data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name"])
+
+
+@dataclass
 class ReductionConfig:
     geometry: AzimuthalIntegrator = AzimuthalIntegrator()
     mask: MaskConfig = MaskConfig()
@@ -140,6 +148,7 @@ class ReductionConfig:
     background: BackgroundConfig = BackgroundConfig()
     pdf: MyPDFConfig = MyPDFConfig()
     label: LabelConfig = LabelConfig()
+    io: IOConfig = IOConfig()
 
 
 class ReductionCalculator:
@@ -483,6 +492,23 @@ class ReductionCalculator:
             dim2dims: typing.Dict[str, typing.List[str]],
     ):
         self.dataset = self._reset_dims(self.dataset, dim2dims)
+        return
+
+    def write_files(self, x_name: str = "r", y_name: str = "G", suffix: str = "gr"):
+        od = pathlib.Path(self.config.io.output_dir)
+        od.mkdir(parents=True, exist_ok=True)
+        ft = self.config.io.fname_template
+        ds = self.dataset
+        data_keys = self.config.io.data_keys
+        mpg = MyPDFGetter(self.config.pdf)
+        trns = mpg.getTransformation(suffix)
+        trns.xout = ds[x_name].values
+        for i, data in enumerate(self.dataset[y_name]):
+            dct = {k: ds[k][i].item() for k in data_keys}
+            filename = ft.format(**dct)
+            filepath = od.joinpath(filename).with_suffix(".{}".format(suffix))
+            trns.yout = data.values
+            mpg.writeOutput(str(filepath), suffix)
         return
 
     @staticmethod
