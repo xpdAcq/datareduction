@@ -431,11 +431,12 @@ class ReductionCalculator:
         i = self.dataset[chi_name][index]
         q = i[q_name]
         mpg = MyPDFGetter(self.config.pdf)
-        config = mpg.config
+        config: MyPDFConfig = mpg.config
         pdf_config = self.config.pdf
         label = self.config.label
 
         def func(
+                roply,
                 qmin,
                 qmax,
                 qmaxinst,
@@ -443,6 +444,7 @@ class ReductionCalculator:
                 qcutoff,
                 endzero
         ):
+            config.rpoly = roply
             config.qmin = qmin
             config.qmax = qmax
             config.qmaxinst = qmaxinst
@@ -459,13 +461,15 @@ class ReductionCalculator:
             ax.set_ylabel("{} [{}]".format(label.F, label.FU))
             plt.pause(0.1)
 
+        qlim = np.max(q.values)
         return interact(
             func,
-            qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=5., step=0.05),
-            qmax=widgets.FloatSlider(pdf_config.qmax, min=5., max=30.0, step=0.1),
-            qmaxinst=widgets.FloatSlider(pdf_config.qmaxinst, min=5.0, max=30.0, step=0.1),
-            lowessf=widgets.FloatSlider(pdf_config.lowessf, min=0.0, max=0.5, step=0.01),
-            qcutoff=widgets.FloatSlider(pdf_config.qcutoff, min=0.0, max=30.0, step=0.1),
+            rpoly=widgets.FloatSlider(pdf_config.qmax, min=0., max=5., step=0.05),
+            qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=qlim, step=0.05),
+            qmax=widgets.FloatSlider(pdf_config.qmax, min=0., max=qlim, step=0.1),
+            qmaxinst=widgets.FloatSlider(pdf_config.qmaxinst, min=0.0, max=qlim, step=0.1),
+            lowessf=widgets.FloatSlider(pdf_config.lowessf, min=0.0, max=0.2, step=0.01),
+            qcutoff=widgets.FloatSlider(pdf_config.qcutoff, min=0.0, max=qlim, step=0.1),
             endzero=widgets.Checkbox(pdf_config.endzero)
         )
 
