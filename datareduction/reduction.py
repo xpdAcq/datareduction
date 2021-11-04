@@ -1,8 +1,11 @@
 import dataclasses as dc
 import pathlib
+import time
 import typing
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+import json
+import time
 
 import ipywidgets.widgets as widgets
 import matplotlib.pyplot as plt
@@ -17,6 +20,7 @@ from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 from bluesky.callbacks.stream import LiveDispatcher
 from databroker import catalog
 
+from datareduction import __version__
 from datareduction.vend import mask_img, generate_binner
 
 
@@ -512,6 +516,14 @@ class ReductionCalculator:
         """Reset the dimension of the dataset."""
         self.dataset = self._reset_dims(self.dataset, dim2dims)
         return
+
+    def export(self) -> xr.Dataset:
+        """Return a copy of the dataset attribute with json serialized configuration in the metadata."""
+        ds = self.dataset.copy()
+        ds.attrs["json_config"] = json.dumps(asdict(self.config))
+        ds.attrs["time"] = time.time()
+        ds.attrs["version"] = __version__
+        return ds
 
     def write_files(self, x_name: str = "r", y_name: str = "G", suffix: str = "gr"):
         """Write the data in the file format of pdfgetx."""
