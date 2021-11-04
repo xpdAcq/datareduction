@@ -330,6 +330,7 @@ class ReductionCalculator:
             chi_name: str = "I",
             q_name: str = "Q"
     ):
+        """Integrate the image to I(Q)."""
         self.dataset = self._integrate(
             self.dataset,
             image_name,
@@ -359,6 +360,7 @@ class ReductionCalculator:
             chi_name: str = "I",
             q_name: str = "Q"
     ):
+        """Background subtraction."""
         scale = self.config.background.scale
         ds = self.dataset
         bkg_ds = self.bkg_dataset
@@ -377,6 +379,7 @@ class ReductionCalculator:
         return
 
     def find_bkg_and_subtract(self, bkg_condition: xr.DataArray) -> None:
+        """Find the background I(Q) in the dataset and subtract it from other I(Q)."""
         dataset = self.dataset.where(~bkg_condition, drop=True)
         bkg_dataset = self.dataset.where(bkg_condition, drop=True)
         self.set_dataset(dataset)
@@ -391,6 +394,7 @@ class ReductionCalculator:
             g_name: str = "G",
             r_name: str = "r"
     ):
+        """Transform the I(Q) to G(r)."""
         ds = self.dataset
         label = self.config.label
         x = ds[q_name].data
@@ -423,6 +427,7 @@ class ReductionCalculator:
             chi_name: str = "I",
             q_name: str = "Q"
     ):
+        """Interactive plot of F(Q)."""
         i = self.dataset[chi_name][index]
         q = i[q_name]
         mpg = MyPDFGetter(self.config.pdf)
@@ -475,6 +480,7 @@ class ReductionCalculator:
             image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
             drop_image: bool = True
     ):
+        """Dark subtraction and integrate the dark subtracted image to I(Q)."""
         self.average(image_name, avg_along)
         if image_name in self.dark_dataset:
             self.average_dark(image_name, dark_avg_along)
@@ -499,10 +505,12 @@ class ReductionCalculator:
             self,
             dim2dims: typing.Dict[str, typing.List[str]],
     ):
+        """Reset the dimension of the dataset."""
         self.dataset = self._reset_dims(self.dataset, dim2dims)
         return
 
     def write_files(self, x_name: str = "r", y_name: str = "G", suffix: str = "gr"):
+        """Write the data in the file format of pdfgetx."""
         od = pathlib.Path(self.config.io.output_dir)
         od.mkdir(parents=True, exist_ok=True)
         ft = self.config.io.fname_template
@@ -571,6 +579,7 @@ class DataProcessor:
         self.db = catalog[self.config.database.name]
 
     def process(self, uid: str) -> None:
+        """Process the data in a run specified by the uid."""
         run = self.db[uid]
         start = dict(run.metadata["start"])
         start.update(self.config.database.metadata)
@@ -587,6 +596,7 @@ class DataProcessor:
         return
 
     def process_batch(self, uids: typing.Iterable[str], bkg_uid: str) -> None:
+        """Process and merge the data in a series of run and subtract the data from the background sample."""
         self.process(bkg_uid)
         bkg_dataset = self.rc.bkg_dataset.copy()
         datasets = []
