@@ -376,6 +376,14 @@ class ReductionCalculator:
         ).compute()
         return
 
+    def find_bkg_and_subtract(self, bkg_condition: xr.DataArray) -> None:
+        dataset = self.dataset.where(~bkg_condition, drop=True)
+        bkg_dataset = self.dataset.where(bkg_condition, drop=True)
+        self.set_dataset(dataset)
+        self.set_bkg_dataset(bkg_dataset)
+        self.bkg_subtract()
+        return
+
     def get_G(
             self,
             chi_name: str = "I",
@@ -576,6 +584,20 @@ class DataProcessor:
         self.rc.set_dark_dataset(dark_dataset)
         self.rc.get_I(self.config.database.image_key)
         self._assign_sample_data(start)
+        return
+
+    def process_batch(self, uids: typing.Iterable[str], bkg_uid: str) -> None:
+        self.process(bkg_uid)
+        bkg_dataset = self.rc.bkg_dataset.copy()
+        datasets = []
+        for uid in uids:
+            self.process(uid)
+            datasets.append(self.rc.dataset.copy())
+        merged = xr.merge(datasets)
+        self.rc.set_dataset(merged)
+        self.rc.set_bkg_dataset(bkg_dataset)
+        self.rc.bkg_subtract()
+        return
 
     def _assign_sample_data(self, start: dict) -> None:
         n = self.rc.dataset.dims["time"]
