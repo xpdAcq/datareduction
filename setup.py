@@ -34,7 +34,7 @@ with open(path.join(here, 'requirements.txt')) as requirements_file:
 
 
 setup(
-    name='datareduction',
+    name='datareduction-stao',
     version='0.0.1',
     description="Data reduction from databroker to xarray.",
     long_description=readme,
