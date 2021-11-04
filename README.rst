@@ -2,9 +2,6 @@
 DataReduction
 =============
 
-.. image:: https://img.shields.io/travis/st3107/datareduction.svg
-        :target: https://travis-ci.org/st3107/datareduction
-
 .. image:: https://img.shields.io/pypi/v/datareduction.svg
         :target: https://pypi.python.org/pypi/datareduction
 
