@@ -169,7 +169,7 @@ class ReductionCalculator:
         return
 
     def set_bkg_dataset(self, dataset: xr.Dataset) -> None:
-        self.bkg_dataset = dataset
+        self.bkg_dataset = dataset.squeeze()
         return
 
     @staticmethod
