@@ -542,6 +542,7 @@ class DatabaseConfig:
 
     name: str = ""
     image_key: str = "pe1_image"
+    metadata: dict = field(default_factory=lambda: {})
     calibration_md_key: str = "calibration_md"
     sc_dk_field_uid_key: str = "sc_dk_field_uid"
     sample_data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name"])
@@ -563,7 +564,8 @@ class DataProcessor:
 
     def process(self, uid: str) -> None:
         run = self.db[uid]
-        start = run.metadata["start"]
+        start = dict(run.metadata["start"])
+        start.update(self.config.database.metadata)
         calibration_md = start[self.config.database.calibration_md_key]
         sc_dk_field_uid = start[self.config.database.sc_dk_field_uid_key]
         dataset = run.primary.to_dask()
