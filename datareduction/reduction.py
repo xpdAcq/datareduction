@@ -610,19 +610,18 @@ class DataProcessor:
         self._assign_sample_data(start)
         return
 
-    def process_batch(self, uids: typing.Iterable[str], bkg_uid: str, remove_bkg: bool = True) -> None:
+    def process_batch(self, uids: typing.Iterable[str], bkg_idx: int = -1) -> None:
         """Process and merge the data in a series of run and subtract the data from the background sample."""
-        self.process(bkg_uid)
-        bkg_dataset = self.rc.dataset.copy()
         datasets = []
         for uid in uids:
             self.process(uid)
             datasets.append(self.rc.dataset.copy())
-        merged = xr.merge(datasets)
+        n = len(datasets)
+        merged = xr.merge((datasets[i] for i in range(n) if i != bkg_idx))
         self.rc.set_dataset(merged)
-        self.rc.set_bkg_dataset(bkg_dataset)
-        if remove_bkg:
-            self.rc.bkg_subtract()
+        if bkg_idx > 0:
+            bkg_dataset = datasets[bkg_idx]
+            self.rc.set_bkg_dataset(bkg_dataset)
         return
 
     def _assign_sample_data(self, start: dict) -> None:
