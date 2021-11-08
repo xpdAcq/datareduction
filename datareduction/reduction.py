@@ -610,7 +610,7 @@ class DataProcessor:
         self._assign_sample_data(start)
         return
 
-    def process_batch(self, uids: typing.Iterable[str], bkg_uid: str) -> None:
+    def process_batch(self, uids: typing.Iterable[str], bkg_uid: str, remove_bkg: bool = True) -> None:
         """Process and merge the data in a series of run and subtract the data from the background sample."""
         self.process(bkg_uid)
         bkg_dataset = self.rc.dataset.copy()
@@ -621,7 +621,8 @@ class DataProcessor:
         merged = xr.merge(datasets)
         self.rc.set_dataset(merged)
         self.rc.set_bkg_dataset(bkg_dataset)
-        self.rc.bkg_subtract()
+        if remove_bkg:
+            self.rc.bkg_subtract()
         return
 
     def _assign_sample_data(self, start: dict) -> None:
