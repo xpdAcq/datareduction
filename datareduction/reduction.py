@@ -440,7 +440,7 @@ class ReductionCalculator:
         label = self.config.label
 
         def func(
-                roply,
+                rpoly,
                 qmin,
                 qmax,
                 qmaxinst,
@@ -448,7 +448,7 @@ class ReductionCalculator:
                 qcutoff,
                 endzero
         ):
-            config.rpoly = roply
+            config.rpoly = rpoly
             config.qmin = qmin
             config.qmax = qmax
             config.qmaxinst = qmaxinst
@@ -468,8 +468,8 @@ class ReductionCalculator:
         qlim = np.max(q.values)
         return interact(
             func,
-            rpoly=widgets.FloatSlider(pdf_config.qmax, min=0., max=5., step=0.05),
-            qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=qlim, step=0.05),
+            rpoly=widgets.FloatSlider(pdf_config.rpoly, min=0., max=5., step=0.05),
+            qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=5., step=0.05),
             qmax=widgets.FloatSlider(pdf_config.qmax, min=0., max=qlim, step=0.1),
             qmaxinst=widgets.FloatSlider(pdf_config.qmaxinst, min=0.0, max=qlim, step=0.1),
             lowessf=widgets.FloatSlider(pdf_config.lowessf, min=0.0, max=0.2, step=0.01),
@@ -520,7 +520,6 @@ class ReductionCalculator:
     def export(self) -> xr.Dataset:
         """Return a copy of the dataset attribute with json serialized configuration in the metadata."""
         ds = self.dataset.copy()
-        ds.attrs["json_config"] = json.dumps(asdict(self.config))
         ds.attrs["time"] = time.time()
         ds.attrs["version"] = __version__
         return ds
@@ -614,7 +613,7 @@ class DataProcessor:
     def process_batch(self, uids: typing.Iterable[str], bkg_uid: str) -> None:
         """Process and merge the data in a series of run and subtract the data from the background sample."""
         self.process(bkg_uid)
-        bkg_dataset = self.rc.bkg_dataset.copy()
+        bkg_dataset = self.rc.dataset.copy()
         datasets = []
         for uid in uids:
             self.process(uid)
