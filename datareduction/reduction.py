@@ -418,10 +418,11 @@ class ReductionCalculator:
             dask="parallelized",
             output_dtypes=[np.float]
         )
-        r = xr.DataArray(mpg.gr[0], dims=[r_name], attrs={"units": label.rU, "standard_name": label.r})
-        g.attrs.update({"units": label.GU, "standard_name": label.G})
+        r = xr.DataArray(mpg.gr[0], dims=[r_name])
         ds = ds.assign_coords({r_name: r})
         ds = ds.assign({g_name: g})
+        ds[r_name].attrs = {"units": label.rU, "standard_name": label.r}
+        ds[g_name].attrs = {"units": label.GU, "standard_name": label.G}
         self.dataset = ds.compute()
         return
 
@@ -536,8 +537,8 @@ class ReductionCalculator:
         trns.xout = ds[x_name].values
         for i, data in enumerate(self.dataset[y_name]):
             dct = {k: ds[k][i].item() for k in data_keys}
-            filename = ft.format(**dct)
-            filepath = od.joinpath(filename).with_suffix(".{}".format(suffix))
+            filename = ft.format(**dct) + ".{}".format(suffix)
+            filepath = od.joinpath(filename)
             trns.yout = data.values
             mpg.writeOutput(str(filepath), suffix)
         return
