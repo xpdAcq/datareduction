@@ -15,5 +15,5 @@ $CHANGELOG_FILENAME = 'CHANGELOG.rst'  # Filename for the changelog
 $CHANGELOG_TEMPLATE = 'TEMPLATE.rst'  # Filename for the news template
 $PUSH_TAG_REMOTE = 'git@github.com:st3107/datareduction.git'  # Repo to push tags to
 
-$GITHUB_ORG = 'st3107'  # Github org for Github releases and conda-forge
+$GITHUB_ORG = 'xpdAcq'  # Github org for Github releases and conda-forge
 $GITHUB_REPO = 'datareduction'  # Github repo for Github releases  and conda-forge
