@@ -793,7 +793,7 @@ class DataProcessor:
     def process_batch(self, uids: typing.Iterable[str], bkg_idx: int = -1) -> None:
         """Process and merge the data in a series of run and subtract the data from the background sample."""
         datasets = []
-        for uid in uids:
+        for uid in tqdm.tqdm(uids):
             self.process(uid)
             datasets.append(self.rc.dataset.copy())
         n = len(datasets)
