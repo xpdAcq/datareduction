@@ -6,7 +6,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
 import json
 import time
+import setuptools
+from pkg_resources import resource_filename
 
+import pyFAI
+import tqdm
 import ipywidgets.widgets as widgets
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,9 +23,16 @@ from ipywidgets import interact
 from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 from bluesky.callbacks.stream import LiveDispatcher
 from databroker import catalog
+from pdffitx.model import MultiPhaseModel
+import subprocess
+from tifffile import TiffWriter
+import pdffitx.io as io
 
 from datareduction import __version__
 from datareduction.vend import mask_img, generate_binner
+
+NI_DSPACING_TXT = resource_filename("datareduction", "data/Ni_dspacing.txt")
+NI_CIF_FILE = resource_filename("datareduction", "data/Ni_cif_file.cif")
 
 
 class MyPDFConfig(PDFConfig):
@@ -145,6 +156,20 @@ class IOConfig:
 
 
 @dataclass
+class CalibrationConfig:
+
+    calibrant: str = NI_DSPACING_TXT
+    detector: str = "Perkin"
+    wavelength: typing.Optional[float] = None
+    structure: str = NI_CIF_FILE
+    xmin: typing.Optional[float] = None
+    xmax: typing.Optional[float] = None
+    xstep: typing.Optional[float] = None
+    qdamp: float = 0.04
+    qbroad: float = 0.02
+
+
+@dataclass
 class ReductionConfig:
     geometry: AzimuthalIntegrator = AzimuthalIntegrator()
     mask: MaskConfig = MaskConfig()
@@ -153,6 +178,7 @@ class ReductionConfig:
     pdf: MyPDFConfig = MyPDFConfig()
     label: LabelConfig = LabelConfig()
     io: IOConfig = IOConfig()
+    calibration: CalibrationConfig = CalibrationConfig()
 
 
 class ReductionCalculator:
@@ -163,17 +189,32 @@ class ReductionCalculator:
         self.dark_dataset: xr.Dataset = xr.Dataset()
         self.bkg_dataset: xr.Dataset = xr.Dataset()
         self.executor = ThreadPoolExecutor(max_workers=24)
+        self.fit_dataset: xr.Dataset = xr.Dataset()
+        self.calib_result: xr.Dataset = xr.Dataset()
 
     def set_dataset(self, dataset: xr.Dataset) -> None:
         self.dataset = dataset
         return
 
-    def set_dark_dataset(self, dataset: xr.Dataset) -> None:
+    def set_dark_dataset(self, dataset: typing.Optional[xr.Dataset]) -> None:
         self.dark_dataset = dataset
         return
 
-    def set_bkg_dataset(self, dataset: xr.Dataset) -> None:
+    def set_bkg_dataset(self, dataset: typing.Optional[xr.Dataset]) -> None:
         self.bkg_dataset = dataset.squeeze()
+        return
+
+    def bkg_img_subtract(self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")) -> None:
+        corrected = xr.apply_ufunc(
+            np.subtract,
+            self.dataset[image_name],
+            self.config.background.scale * self.bkg_dataset[image_name].values,
+            input_core_dims=[image_dims, image_dims],
+            output_core_dims=[image_dims],
+            dask="parallelized",
+            output_dtypes=[np.float]
+        )
+        self.dataset = self.dataset.assign({image_name: corrected})
         return
 
     @staticmethod
@@ -388,7 +429,6 @@ class ReductionCalculator:
         bkg_dataset = self.dataset.where(bkg_condition, drop=True)
         self.set_dataset(dataset)
         self.set_bkg_dataset(bkg_dataset)
-        self.bkg_subtract()
         return
 
     def get_G(
@@ -568,6 +608,123 @@ class ReductionCalculator:
         ds = ds.rename_vars(rule)
         return ds
 
+    def write_one_tiff(self, image_name: str) -> str:
+        _output_dir = pathlib.Path(self.config.io.output_dir)
+        tiff_file = _output_dir.joinpath("image_for_calib.tiff")
+        tw = TiffWriter(str(tiff_file))
+        data = self.dataset[image_name].values[0]
+        tw.save(data)
+        return str(tiff_file)
+
+    def set_geometry_by_poni(self, poni_file: str) -> None:
+        self.config.geometry = pyFAI.load(poni_file)
+        return
+
+    def run_calib(
+            self,
+            tiff_file: str
+    ) -> None:
+        wavelength = self.config.calibration.wavelength
+        calibrant = self.config.calibration.calibrant
+        detector = self.config.calibration.detector
+        poni_file = str(pathlib.Path(self.config.io.output_dir).joinpath("calib.poni"))
+        args = ["pyFAI-calib2", "--poni", poni_file]
+        if wavelength:
+            args.extend(["--wavelength", str(wavelength)])
+        if calibrant:
+            args.extend(["--calibrant", str(calibrant)])
+        if detector:
+            args.extend(["--detector", str(detector)])
+        args.append(tiff_file)
+        cp = subprocess.run(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if cp.returncode != 0:
+            io.server_message("Error in Calibration. See below:")
+            print(r"$", " ".join(args))
+            print(cp.stdout.decode())
+            print(cp.stderr.decode())
+        return
+
+    def get_poni_files(self) -> typing.List[str]:
+        _output_dir = pathlib.Path(self.config.io.output_dir)
+        lst = []
+        for f in _output_dir.glob("*.poni"):
+            lst.append(str(f))
+        return lst
+
+    def run_fit(self) -> None:
+        ni = io.load_crystal(self.config.calibration.structure)
+        mpm = MultiPhaseModel(equation="Standard", structures={"Standard": ni})
+        g = mpm.get_generators().get("Standard")
+        recipe = mpm.get_recipe()
+        recipe.addVar(g.qdamp)
+        recipe.addVar(g.qbroad)
+        recipe.qdamp.setValue(self.config.calibration.qdamp)
+        recipe.qbroad.setValue(self.config.calibration.qbroad)
+        mpm.set_order("scale", "lat", ["adp", "delta"], ["qdamp", "qbroad"])
+        mpm.set_verbose(0)
+        results = mpm.fit_many_data(
+            self.dataset,
+            xmin=self.config.calibration.xmin,
+            xmax=self.config.calibration.xmax,
+            xstep=self.config.calibration.xstep,
+            progress_bar=False,
+            exclude_vars=["Q", "I"]
+        )
+        self.fit_dataset = xr.merge(results)
+        return
+
+    def clear_dark_dataset(self) -> None:
+        self.set_dark_dataset(xr.Dataset())
+        return
+
+    def clear_bkg_dataset(self) -> None:
+        self.set_bkg_dataset(xr.Dataset())
+        return
+
+    def run_calib_and_fit(self, image_name: str) -> None:
+        self.average(image_name)
+        self.average_dark(image_name)
+        self.dark_subtract(image_name)
+        if image_name in self.bkg_dataset:
+            self.average_bkg(image_name)
+            self.dark_subtract_bkg(image_name)
+            self.bkg_img_subtract(image_name)
+        self.clear_dark_dataset()
+        self.clear_bkg_dataset()
+        tiff_file = self.write_one_tiff(image_name)
+        self.run_calib(tiff_file)
+        dss = []
+        for f in tqdm.tqdm(self.get_poni_files()):
+            self.set_geometry_by_poni(f)
+            self.mask(image_name)
+            self.integrate(image_name)
+            self.get_G()
+            self.run_fit()
+            ds = self.fit_dataset.copy()
+            w = float(self.config.geometry.wavelength) * 1e10
+            ds = ds.assign_coords({"wavelength": (["time"], [w])}).swap_dims({"time": "wavelength"}).drop_vars(
+                "time")
+            dss.append(ds)
+        self.calib_result = xr.merge(dss)
+        self.calib_result = self.calib_result.sortby("wavelength")
+        self.update_calib_result_attrs()
+        return
+
+    def update_calib_result_attrs(self) -> None:
+        self.calib_result["rw"].attrs.update(
+            {"standard_name": "$R_w$"}
+        )
+        self.calib_result["qdamp"].attrs.update(
+            {"standard_name": "Q$_{damp}$", "units": "$\mathrm{\AA}^{-1}$"}
+        )
+        self.calib_result["qbroad"].attrs.update(
+            {"standard_name": "Q$_{broad}$", "units": "$\mathrm{\AA}^{-1}$"}
+        )
+        self.calib_result["wavelength"].attrs.update(
+            {"standard_name": "wavelength", "units": "$\mathrm{\AA}$"}
+        )
+        return
+
 
 @dataclass
 class DatabaseConfig:
@@ -577,6 +734,7 @@ class DatabaseConfig:
     metadata: dict = field(default_factory=lambda: {})
     calibration_md_key: str = "calibration_md"
     sc_dk_field_uid_key: str = "sc_dk_field_uid"
+    bt_wavelength_key: str = "bt_wavelength"
     sample_data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name"])
 
 
@@ -608,7 +766,28 @@ class DataProcessor:
         self.rc.set_dataset(dataset)
         self.rc.set_dark_dataset(dark_dataset)
         self.rc.get_I(self.config.database.image_key)
+        self.rc.clear_dark_dataset()
         self._assign_sample_data(start)
+        return
+
+    def process_calib(self, uid: str, bkg_uid: typing.Optional[str] = None) -> None:
+        run = self.db[uid]
+        start = dict(run.metadata["start"])
+        start.update(self.config.database.metadata)
+        sc_dk_field_uid = start[self.config.database.sc_dk_field_uid_key]
+        dataset = run.primary.read()
+        dark_run = self.db[sc_dk_field_uid]
+        dark_dataset = dark_run.primary.read()
+        bwk = self.config.database.bt_wavelength_key
+        if bwk in start:
+            self.rc.config.calibration.wavelength = float(start[bwk])
+        self.rc.set_dataset(dataset)
+        self.rc.set_dark_dataset(dark_dataset)
+        if bkg_uid:
+            bkg_run = self.db[bkg_uid]
+            bkg_dataset = bkg_run.primary.read()
+            self.rc.set_bkg_dataset(bkg_dataset)
+        self.rc.run_calib_and_fit(self.config.database.image_key)
         return
 
     def process_batch(self, uids: typing.Iterable[str], bkg_idx: int = -1) -> None:
