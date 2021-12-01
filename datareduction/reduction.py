@@ -55,6 +55,7 @@ class MyPDFConfig(PDFConfig):
         self.qmin = 0.
         self.qmaxinst = 24.0
         self.qmax = 22.0
+        self.composition = "Ni"
 
 
 def smooth(xin: np.ndarray, yin: np.ndarray, xcutoff: float, lowessf: float, endzero: bool) -> typing.Tuple[
@@ -191,6 +192,7 @@ class ReductionCalculator:
         self.executor = ThreadPoolExecutor(max_workers=24)
         self.fit_dataset: xr.Dataset = xr.Dataset()
         self.calib_result: xr.Dataset = xr.Dataset()
+        self.mypdfgetter = MyPDFGetter(self.config.pdf)
 
     def set_dataset(self, dataset: xr.Dataset) -> None:
         self.dataset = dataset
@@ -442,7 +444,7 @@ class ReductionCalculator:
         ds = self.dataset
         label = self.config.label
         x = ds[q_name].data
-        mpg = MyPDFGetter(self.config.pdf)
+        mpg = self.mypdfgetter
 
         def func(y):
             _, yout = mpg.__call__(x, y)
@@ -475,7 +477,7 @@ class ReductionCalculator:
         """Interactive plot of F(Q)."""
         i = self.dataset[chi_name][index]
         q = i[q_name]
-        mpg = MyPDFGetter(self.config.pdf)
+        mpg = self.mypdfgetter
         config: MyPDFConfig = mpg.config
         pdf_config = self.config.pdf
         label = self.config.label
