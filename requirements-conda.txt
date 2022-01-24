@@ -1,7 +1,7 @@
-matplotlib
+matplotlib-base
 numpy
 numba
-skbeam
+scikit-beam
 pyFAI
 statsmodels
 xarray
@@ -9,3 +9,4 @@ databroker
 tifffile
 ipywidgets
 tqdm
+pip
