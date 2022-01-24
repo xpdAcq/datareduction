@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 import ipywidgets.widgets as widgets
 import matplotlib.pyplot as plt
 import numpy as np
-import pdffitx.io as io
 import pyFAI
 import statsmodels.nonparametric.smoothers_lowess as smoothers_lowess
 import tqdm
@@ -18,7 +17,6 @@ from databroker import catalog
 from diffpy.pdfgetx import PDFConfig, PDFGetter, Transformation
 from diffpy.pdfgetx.pdfconfig import PDFConfigError
 from ipywidgets import interact
-from pdffitx.model import MultiPhaseModel
 from pkg_resources import resource_filename
 from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 from tifffile import TiffWriter
@@ -619,6 +617,7 @@ class ReductionCalculator:
             self,
             tiff_file: str
     ) -> None:
+        import pdffitx.io as io
         wavelength = self.config.calibration.wavelength
         calibrant = self.config.calibration.calibrant
         detector = self.config.calibration.detector
@@ -647,6 +646,7 @@ class ReductionCalculator:
         return lst
 
     def run_fit(self) -> None:
+        from pdffitx.model import MultiPhaseModel
         ni = io.load_crystal(self.config.calibration.structure)
         mpm = MultiPhaseModel(equation="Standard", structures={"Standard": ni})
         g = mpm.get_generators().get("Standard")
