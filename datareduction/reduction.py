@@ -1,32 +1,27 @@
 import dataclasses as dc
 import pathlib
+import subprocess
 import time
 import typing
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, asdict
-import json
-import time
-import setuptools
-from pkg_resources import resource_filename
+from dataclasses import dataclass, field
 
-import pyFAI
-import tqdm
 import ipywidgets.widgets as widgets
 import matplotlib.pyplot as plt
 import numpy as np
+import pdffitx.io as io
+import pyFAI
 import statsmodels.nonparametric.smoothers_lowess as smoothers_lowess
+import tqdm
 import xarray as xr
-import event_model as em
+from databroker import catalog
 from diffpy.pdfgetx import PDFConfig, PDFGetter, Transformation
 from diffpy.pdfgetx.pdfconfig import PDFConfigError
 from ipywidgets import interact
-from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
-from bluesky.callbacks.stream import LiveDispatcher
-from databroker import catalog
 from pdffitx.model import MultiPhaseModel
-import subprocess
+from pkg_resources import resource_filename
+from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 from tifffile import TiffWriter
-import pdffitx.io as io
 
 from datareduction import __version__
 from datareduction.vend import mask_img, generate_binner
@@ -150,7 +145,6 @@ class LabelConfig:
 
 @dataclass
 class IOConfig:
-
     output_dir: str = r"./"
     fname_template: str = r"{sample_name}"
     data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name"])
@@ -158,7 +152,6 @@ class IOConfig:
 
 @dataclass
 class CalibrationConfig:
-
     calibrant: str = NI_DSPACING_TXT
     detector: str = "Perkin"
     wavelength: typing.Optional[float] = None
@@ -730,7 +723,6 @@ class ReductionCalculator:
 
 @dataclass
 class DatabaseConfig:
-
     name: str = ""
     image_key: str = "pe1_image"
     metadata: dict = field(default_factory=lambda: {})
@@ -742,7 +734,6 @@ class DatabaseConfig:
 
 @dataclass
 class DataProcessConfig:
-
     reduction: ReductionConfig = ReductionConfig()
     database: DatabaseConfig = DatabaseConfig()
 
@@ -808,7 +799,7 @@ class DataProcessor:
 
     def _assign_sample_data(self, start: dict) -> None:
         n = self.rc.dataset.dims["time"]
-        sample_data = {k: ("time", [start[k]] * n)for k in self.config.database.sample_data_keys}
+        sample_data = {k: ("time", [start[k]] * n) for k in self.config.database.sample_data_keys}
         self.rc.dataset = self.rc.dataset.assign(sample_data)
         return
 
