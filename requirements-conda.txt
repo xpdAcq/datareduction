@@ -1,0 +1,11 @@
+matplotlib
+numpy
+numba
+skbeam
+pyFAI
+statsmodels
+xarray
+databroker
+tifffile
+ipywidgets
+tqdm
