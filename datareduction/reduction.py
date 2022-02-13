@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyFAI
 import statsmodels.nonparametric.smoothers_lowess as smoothers_lowess
-import tqdm
+import tqdm.notebook as tqdm
 import xarray as xr
 from databroker import catalog
 from diffpy.pdfgetx import PDFConfig, PDFGetter, Transformation
