@@ -788,7 +788,7 @@ class DataProcessor:
         datasets = []
         for uid in tqdm.tqdm(uids):
             self.process(uid)
-            datasets.append(self.rc.dataset.copy())
+            datasets.append(self.rc.dataset)
         n = len(datasets)
         merged = xr.merge((datasets[i] for i in range(n) if i != bkg_idx))
         self.rc.set_dataset(merged)
