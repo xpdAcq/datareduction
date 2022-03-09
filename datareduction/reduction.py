@@ -437,6 +437,7 @@ class ReductionCalculator:
         label = self.config.label
         self.dataset[chi_name].attrs = {"units": label.IU, "standard_name": label.I}
         self.dataset[q_name].attrs = {"units": label.QU, "standard_name": label.Q}
+        self.dataset = self.dataset.compute()
         return
 
     def save(self):
