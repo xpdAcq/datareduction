@@ -482,7 +482,7 @@ class ReductionCalculator:
         other_dims = set(arr.dims) - set(image_dims)
         sizes = [arr.sizes[d] for d in other_dims]
         idxs = np.stack([np.ravel(i) for i in np.indices(sizes)]).transpose()
-        gen = tqdm.tqdm(idxs, disable=(self.config.verbose <= 0), desc="Images")
+        gen = tqdm.tqdm(idxs, disable=(self.config.verbose <= 0), desc="Images", leave=False)
         for idx in gen:
             image = arr.isel(dict(zip(other_dims, idx))).compute()
             coords = {k: image.coords[k] for k in other_dims if k in image.coords}
