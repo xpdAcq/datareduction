@@ -171,6 +171,7 @@ class ReductionConfig:
     label: LabelConfig = LabelConfig()
     io: IOConfig = IOConfig()
     calibration: CalibrationConfig = CalibrationConfig()
+    verbose: int = 1
 
 
 class ReductionCalculator:
@@ -411,6 +412,69 @@ class ReductionCalculator:
             chi_name,
             q_name
         )
+
+    def mask_and_integrate(
+            self,
+            image_name: str,
+            image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
+            chi_name: str = "I",
+            q_name: str = "Q"
+    ) -> None:
+        ds = self.dataset
+        ai = self.config.geometry
+        mc = self.config.mask
+        ic = self.config.integration
+        mask_kwargs = dc.asdict(mc)
+        shape = [ds.sizes[d] for d in image_dims]
+        mask_kwargs["binner"] = generate_binner(ai, shape)
+        integ_kwargs = dc.asdict(ic)
+        gen = self._mask_and_integrate(image_name, image_dims, chi_name, q_name, mask_kwargs, integ_kwargs)
+        chi: xr.Dataset = xr.merge(gen)
+        self.dataset = self.dataset.drop_dims(image_dims).compute().update(chi)
+        label = self.config.label
+        self.dataset[chi_name].attrs = {"units": label.IU, "standard_name": label.I}
+        self.dataset[q_name].attrs = {"units": label.QU, "standard_name": label.Q}
+        return
+
+    def _mask_and_integrate(
+            self,
+            image_name: str,
+            image_dims: typing.Tuple[str, str],
+            chi_name: str,
+            q_name: str,
+            mask_kwargs: dict,
+            integ_kwargs: dict
+    ) -> typing.Generator[xr.Dataset, None, None]:
+        ai = self.config.geometry
+        for coords, image in self._gen_image(image_name, image_dims):
+            mask = mask_img(image, **mask_kwargs)
+            q, chi = ai.integrate1d(image, **integ_kwargs, mask=1 - mask)
+            ds = xr.Dataset(
+                {chi_name: ([q_name], chi)},
+                {q_name: q}
+            ).assign_coords(
+                coords
+            ).expand_dims(
+                list(coords.keys())
+            )
+            yield ds
+        return
+
+    def _gen_image(
+            self,
+            image_name: str,
+            image_dims: typing.Tuple[str, str]
+    ) -> typing.Generator[typing.Tuple[dict, np.ndarray], None, None]:
+        arr = self.dataset[image_name]
+        other_dims = set(arr.dims) - set(image_dims)
+        sizes = [arr.sizes[d] for d in other_dims]
+        idxs = np.stack([np.ravel(i) for i in np.indices(sizes)]).transpose()
+        gen = tqdm.tqdm(idxs, disable=(self.config.verbose <= 0), desc="Images")
+        for idx in gen:
+            image = arr.isel(dict(zip(other_dims, idx))).compute()
+            coords = {k: image.coords[k] for k in other_dims if k in image.coords}
+            yield coords, image.data
+        return
 
     def bkg_subtract(
             self,
@@ -780,6 +844,7 @@ class DatabaseConfig:
 class DataProcessConfig:
     reduction: ReductionConfig = ReductionConfig()
     database: DatabaseConfig = DatabaseConfig()
+    verbose: int = 1
 
 
 class DataProcessor:
@@ -827,23 +892,24 @@ class DataProcessor:
         self.rc.clear_bkg_dark_dataset()
         return
 
-    def imgsub_data(self):
-        """Process the data using the image subtraction."""
-        self.rc.bkg_img_subtract(self.config.database.image_key)
-        self.rc.get_I(self.config.database.image_key, process_image=False)
-        self._assign_sample_data()
-        return
-
     def imgsub_batch(self, uids: typing.Iterable[str], bkg_uid: str):
         self.load_bkg_data(bkg_uid)
-        self.rc.set_dataset(xr.merge(self._gen_imgsub_data(uids)))
+        gen = self._gen_imgsub_data(uids)
+        self.rc.set_dataset(xr.merge(gen))
         return
 
     def _gen_imgsub_data(self, uids: typing.Iterable[str]) -> xr.Dataset:
-        for uid in uids:
+        for uid in tqdm.tqdm(uids, disable=(self.config.verbose <= 0), desc="Experiments"):
             self.load_data(uid)
             self.imgsub_data()
             yield self.rc.dataset
+        return
+
+    def imgsub_data(self):
+        """Process the data using the image subtraction."""
+        self.rc.bkg_img_subtract(self.config.database.image_key)
+        self.rc.mask_and_integrate(self.config.database.image_key)
+        self._assign_sample_data()
         return
 
     def process(self, uid: str) -> None:
