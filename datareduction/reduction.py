@@ -180,6 +180,7 @@ class ReductionCalculator:
         self.dataset: xr.Dataset = xr.Dataset()
         self.dark_dataset: xr.Dataset = xr.Dataset()
         self.bkg_dataset: xr.Dataset = xr.Dataset()
+        self.bkg_dark_dataset: xr.Dataset = xr.Dataset()
         self.executor = ThreadPoolExecutor(max_workers=24)
         self.fit_dataset: xr.Dataset = xr.Dataset()
         self.calib_result: xr.Dataset = xr.Dataset()
@@ -189,12 +190,16 @@ class ReductionCalculator:
         self.dataset = dataset
         return
 
+    def set_bkg_dark_dataset(self, dataset: typing.Optional[xr.Dataset]) -> None:
+        self.bkg_dark_dataset = dataset
+        return
+
     def set_dark_dataset(self, dataset: typing.Optional[xr.Dataset]) -> None:
         self.dark_dataset = dataset
         return
 
-    def set_bkg_dataset(self, dataset: typing.Optional[xr.Dataset]) -> None:
-        self.bkg_dataset = dataset.squeeze()
+    def set_bkg_dataset(self, dataset: typing.Optional[xr.Dataset], squeeze: bool = True) -> None:
+        self.bkg_dataset = dataset.squeeze() if squeeze else dataset
         return
 
     def bkg_img_subtract(self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")) -> None:
@@ -241,6 +246,18 @@ class ReductionCalculator:
         )
         return
 
+    def average_bkg_dark(
+            self,
+            image_name: str,
+            along: typing.Sequence[str] = ("time", "dim_0")
+    ):
+        self.bkg_dark_dataset = self._average(
+            self.bkg_dark_dataset,
+            image_name,
+            along
+        )
+        return
+
     def average_bkg(
             self,
             image_name: str,
@@ -264,13 +281,13 @@ class ReductionCalculator:
         )
         return
 
+    @staticmethod
     def _dark_subtract(
-            self,
             ds,
+            dark_ds,
             image_name: str,
             image_dims: typing.Sequence[str]
     ):
-        dark_ds = self.dark_dataset
         corrected = xr.apply_ufunc(
             np.subtract,
             ds[image_name],
@@ -290,6 +307,7 @@ class ReductionCalculator:
     ):
         self.dataset = self._dark_subtract(
             self.dataset,
+            self.dark_dataset,
             image_name,
             image_dims
         )
@@ -302,6 +320,7 @@ class ReductionCalculator:
     ):
         self.bkg_dataset = self._dark_subtract(
             self.bkg_dataset,
+            self.bkg_dark_dataset,
             image_name,
             image_dims
         )
@@ -416,6 +435,22 @@ class ReductionCalculator:
         ).compute()
         return
 
+    def img_bkg_subtract(
+            self,
+            image_name: str
+    ):
+        """Background subtraction on image level."""
+        scale = self.config.background.scale
+        ds = self.dataset
+        bkg_ds = self.bkg_dataset
+        attrs = ds[image_name].attrs
+        subtracted = ds[image_name] - bkg_ds[image_name] * xr.DataArray(scale)
+        subtracted.attrs = attrs
+        self.dataset = self.dark_dataset.assign(
+            {image_name: subtracted}
+        )
+        return
+
     def find_bkg_and_subtract(self, bkg_condition: xr.DataArray) -> None:
         """Find the background I(Q) in the dataset and subtract it from other I(Q)."""
         dataset = self.dataset.where(~bkg_condition, drop=True)
@@ -489,7 +524,7 @@ class ReductionCalculator:
             config.lowessf = lowessf
             config.qcutoff = qcutoff
             config.endzero = endzero
-            mpg.__call__(q, i)
+            _, g = mpg.__call__(q, i)
             q1, f1 = mpg.t[-3].xout, mpg.t[-3].yout
             q2, f2 = mpg.t[-2].xout, mpg.t[-2].yout
             ax: plt.Axes = plt.subplots()[1]
@@ -520,18 +555,23 @@ class ReductionCalculator:
             dark_avg_along: typing.Sequence[str] = ("time", "dim_0"),
             bkg_avg_along: typing.Sequence[str] = ("time", "dim_0"),
             image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
+            process_image: bool = True,
             drop_image: bool = True
     ):
         """Dark subtraction and integrate the dark subtracted image to I(Q)."""
-        self.average(image_name, avg_along)
-        if image_name in self.dark_dataset:
-            self.average_dark(image_name, dark_avg_along)
-            self.dark_subtract(image_name, image_dims)
+        if process_image:
+            self.average(image_name, avg_along)
+            if image_name in self.dark_dataset:
+                self.average_dark(image_name, dark_avg_along)
+                self.dark_subtract(image_name, image_dims)
+            if image_name in self.bkg_dataset:
+                self.average_bkg(image_name, bkg_avg_along)
+                if image_name in self.bkg_dark_dataset:
+                    self.average_bkg_dark(image_name, avg_along)
+                    self.dark_subtract_bkg(image_name, image_dims)
         self.mask(image_name, image_dims)
         self.integrate(image_name, image_dims, chi_name, q_name)
-        if image_name in self.bkg_dataset:
-            self.average_bkg(image_name, bkg_avg_along)
-            self.dark_subtract_bkg(image_name, image_dims)
+        if process_image and image_name in self.bkg_dataset:
             self.integrate_bkg(image_name, image_dims, chi_name, q_name)
             self.bkg_subtract(chi_name)
         ds = self.dataset
@@ -672,6 +712,10 @@ class ReductionCalculator:
         self.set_dark_dataset(xr.Dataset())
         return
 
+    def clear_bkg_dark_dataset(self) -> None:
+        self.set_bkg_dark_dataset(xr.Dataset())
+        return
+
     def clear_bkg_dataset(self) -> None:
         self.set_bkg_dataset(xr.Dataset())
         return
@@ -744,12 +788,14 @@ class DataProcessor:
         self.config = config
         self.rc = ReductionCalculator(self.config.reduction)
         self.db = catalog[self.config.database.name]
+        self._cached_start = dict()
 
-    def process(self, uid: str) -> None:
-        """Process the data in a run specified by the uid."""
+    def load_data(self, uid: str) -> None:
+        """Load data from the Bluesky run and dark subtract."""
         run = self.db[uid]
         start = dict(run.metadata["start"])
         start.update(self.config.database.metadata)
+        self._cached_start = start
         calibration_md = start[self.config.database.calibration_md_key]
         sc_dk_field_uid = start[self.config.database.sc_dk_field_uid_key]
         dataset = run.primary.to_dask()
@@ -758,9 +804,53 @@ class DataProcessor:
         self._load_ai_from_calib_result(calibration_md)
         self.rc.set_dataset(dataset)
         self.rc.set_dark_dataset(dark_dataset)
-        self.rc.get_I(self.config.database.image_key)
+        self.rc.average(self.config.database.image_key)
+        self.rc.average_dark(self.config.database.image_key)
+        self.rc.dark_subtract(self.config.database.image_key)
         self.rc.clear_dark_dataset()
-        self._assign_sample_data(start)
+        return
+
+    def load_bkg_data(self, uid: str) -> None:
+        """Load background data from the bluesky run and dark subtract."""
+        run = self.db[uid]
+        start = dict(run.metadata["start"])
+        start.update(self.config.database.metadata)
+        sc_dk_field_uid = start[self.config.database.sc_dk_field_uid_key]
+        dataset = run.primary.to_dask()
+        dark_run = self.db[sc_dk_field_uid]
+        dark_dataset = dark_run.primary.to_dask()
+        self.rc.set_bkg_dataset(dataset, squeeze=False)
+        self.rc.set_bkg_dark_dataset(dark_dataset)
+        self.rc.average_bkg(self.config.database.image_key)
+        self.rc.average_bkg_dark(self.config.database.image_key)
+        self.rc.dark_subtract_bkg(self.config.database.image_key)
+        self.rc.clear_bkg_dark_dataset()
+        return
+
+    def imgsub_data(self):
+        """Process the data using the image subtraction."""
+        self.rc.bkg_img_subtract(self.config.database.image_key)
+        self.rc.get_I(self.config.database.image_key, process_image=False)
+        self._assign_sample_data()
+        return
+
+    def imgsub_batch(self, uids: typing.Iterable[str], bkg_uid: str):
+        self.load_bkg_data(bkg_uid)
+        self.rc.set_dataset(xr.merge(self._gen_imgsub_data(uids)))
+        return
+
+    def _gen_imgsub_data(self, uids: typing.Iterable[str]) -> xr.Dataset:
+        for uid in uids:
+            self.load_data(uid)
+            self.imgsub_data()
+            yield self.rc.dataset
+        return
+
+    def process(self, uid: str) -> None:
+        """Process the data in a run specified by the uid."""
+        self.load_data(uid)
+        self.rc.get_I(self.config.database.image_key)
+        self._assign_sample_data()
         return
 
     def process_calib(self, uid: str, bkg_uid: typing.Optional[str] = None) -> None:
@@ -797,7 +887,8 @@ class DataProcessor:
             self.rc.set_bkg_dataset(bkg_dataset)
         return
 
-    def _assign_sample_data(self, start: dict) -> None:
+    def _assign_sample_data(self) -> None:
+        start = self._cached_start
         n = self.rc.dataset.dims["time"]
         sample_data = {k: ("time", [start[k]] * n) for k in self.config.database.sample_data_keys}
         self.rc.dataset = self.rc.dataset.assign(sample_data)
