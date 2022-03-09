@@ -848,7 +848,18 @@ class DataProcessor:
 
     def process(self, uid: str) -> None:
         """Process the data in a run specified by the uid."""
-        self.load_data(uid)
+        run = self.db[uid]
+        start = dict(run.metadata["start"])
+        start.update(self.config.database.metadata)
+        self._cached_start = start
+        calibration_md = start[self.config.database.calibration_md_key]
+        sc_dk_field_uid = start[self.config.database.sc_dk_field_uid_key]
+        dataset = run.primary.to_dask()
+        dark_run = self.db[sc_dk_field_uid]
+        dark_dataset = dark_run.primary.to_dask()
+        self._load_ai_from_calib_result(calibration_md)
+        self.rc.set_dataset(dataset)
+        self.rc.set_dark_dataset(dark_dataset)
         self.rc.get_I(self.config.database.image_key)
         self._assign_sample_data()
         return
