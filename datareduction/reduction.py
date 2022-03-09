@@ -488,6 +488,7 @@ class ReductionCalculator:
             image = arr.isel(dict(zip(other_dims, idx))).compute()
             coords = {k: image.coords[k] for k in other_dims if k in image.coords}
             yield coords, image.data
+        gen.close()
         return
 
     def bkg_subtract(
@@ -913,10 +914,12 @@ class DataProcessor:
         return
 
     def _gen_imgsub_data(self, uids: typing.Iterable[str]) -> xr.Dataset:
-        for uid in tqdm.tqdm(uids, disable=(self.config.verbose <= 0), desc="Experiments"):
+        gen = tqdm.tqdm(uids, disable=(self.config.verbose <= 0), desc="Experiments")
+        for uid in gen:
             self.load_data(uid)
             self.imgsub_data()
             yield self.rc.dataset
+        gen.close()
         return
 
     def imgsub_data(self):
