@@ -146,6 +146,9 @@ class IOConfig:
     output_dir: str = r"./"
     fname_template: str = r"{sample_name}"
     data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name"])
+    dataset_file: str = r"./dataset.nc"
+    io_format: str = "NETCDF4"
+    io_engine: str = "netcdf4"
 
 
 @dataclass
@@ -430,10 +433,20 @@ class ReductionCalculator:
         integ_kwargs = dc.asdict(ic)
         gen = self._mask_and_integrate(image_name, image_dims, chi_name, q_name, mask_kwargs, integ_kwargs)
         chi: xr.Dataset = xr.merge(gen)
-        self.dataset = self.dataset.drop_dims(image_dims).compute().update(chi)
+        self.dataset = self.dataset.drop_dims(image_dims).update(chi)
         label = self.config.label
         self.dataset[chi_name].attrs = {"units": label.IU, "standard_name": label.I}
         self.dataset[q_name].attrs = {"units": label.QU, "standard_name": label.Q}
+        return
+
+    def save(self):
+        f = pathlib.PurePath(self.config.io.dataset_file)
+        self.dataset.to_netcdf(str(f), engine=self.config.io.io_engine, format=self.config.io.io_format)
+        return
+
+    def load(self):
+        f = pathlib.PurePath(self.config.io.dataset_file)
+        self.dataset = xr.load_dataset(str(f), engine=self.config.io.io_engine)
         return
 
     def _mask_and_integrate(
