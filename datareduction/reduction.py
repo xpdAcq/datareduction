@@ -547,34 +547,55 @@ class ReductionCalculator:
             c_name: str = "composition_string"
     ):
         """Transform the I(Q) to G(r)."""
-        ds = self.dataset
         label = self.config.label
-        x = ds[q_name].data
+        ds = xr.merge(self._gen_gr(g_name, r_name, chi_name, q_name, c_name))
+        if r_name in self.dataset:
+            self.dataset = self.dataset.drop_dims(r_name)
+        self.dataset.update(ds)
+        self.dataset[r_name].attrs = {"units": label.rU, "standard_name": label.r}
+        self.dataset[g_name].attrs = {"units": label.GU, "standard_name": label.G}
+        return
+
+    def _gen_gr(
+            self,
+            g_name: str,
+            r_name: str,
+            chi_name: str,
+            q_name: str,
+            c_name: str
+    ) -> typing.Generator[xr.Dataset, None, None]:
         mpg = self.mypdfgetter
+        for coords, ds in self._gen_data_along_q(chi_name, q_name):
+            chi = ds[chi_name].values
+            q = ds[q_name].values
+            if c_name in ds:
+                mpg.config.composition = ds[c_name].values[0]
+            r, g = mpg.__call__(q, chi)
+            yield xr.Dataset(
+                {g_name: ([r_name], g)},
+                {r_name: r}
+            ).assign_coords(
+                coords
+            ).expand_dims(
+                list(coords.keys())
+            )
+        return
 
-        def func(y, c):
-            mpg.config.composition = c
-            _, yout = mpg.__call__(x, y)
-            return yout
-
-        g = xr.apply_ufunc(
-            func,
-            ds[chi_name],
-            ds[c_name],
-            input_core_dims=[[q_name], []],
-            output_core_dims=[[r_name]],
-            exclude_dims={q_name},
-            vectorize=True,
-            output_dtypes=[np.float]
-        )
-        r = xr.DataArray(mpg.gr[0], dims=[r_name])
-        if r_name in ds:
-            ds = ds.drop_dims(r_name)
-        ds = ds.assign_coords({r_name: r})
-        ds = ds.assign({g_name: g})
-        ds[r_name].attrs = {"units": label.rU, "standard_name": label.r}
-        ds[g_name].attrs = {"units": label.GU, "standard_name": label.G}
-        self.dataset = ds.compute()
+    def _gen_data_along_q(
+            self,
+            chi_name: str,
+            q_name: str
+    ) -> typing.Generator[typing.Tuple[dict, xr.Dataset], None, None]:
+        arr = self.dataset[chi_name]
+        other_dims = set(arr.dims) - {q_name}
+        sizes = [arr.sizes[d] for d in other_dims]
+        idxs = np.stack([np.ravel(i) for i in np.indices(sizes)]).transpose()
+        gen = tqdm.tqdm(idxs, disable=(self.config.verbose <= 0), desc="PDFs")
+        for idx in gen:
+            ds = self.dataset.isel(dict(zip(other_dims, idx)))
+            coords = {k: ds.coords[k] for k in other_dims if k in ds.coords}
+            yield coords, ds
+        gen.close()
         return
 
     def interact_fq(
