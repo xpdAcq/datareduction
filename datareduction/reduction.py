@@ -560,7 +560,7 @@ class ReductionCalculator:
         g = xr.apply_ufunc(
             func,
             ds[chi_name],
-            df[c_name],
+            ds[c_name],
             input_core_dims=[[q_name], []],
             output_core_dims=[[r_name]],
             exclude_dims={q_name},
