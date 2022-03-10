@@ -606,9 +606,9 @@ class ReductionCalculator:
             c_name: str = "composition_string"
     ):
         """Interactive plot of F(Q)."""
-        mpg = self.mypdfgetter
-        config: MyPDFConfig = mpg.config
-        pdf_config = self.config.pdf
+        config = self.config.pdf
+        mpg = MyPDFGetter(config)
+        mpg.popTransformation("gr")
         label = self.config.label
         qlim = np.max(self.dataset[q_name].values)
         n_data = self.dataset[chi_name].shape[0]
@@ -649,13 +649,13 @@ class ReductionCalculator:
         interact(
             func,
             index=widgets.IntSlider(0, min=0, max=n_data - 1, step=1),
-            rpoly=widgets.FloatSlider(pdf_config.rpoly, min=0., max=5., step=0.05),
-            qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=5., step=0.05),
-            qmax=widgets.FloatSlider(pdf_config.qmax, min=0., max=qlim, step=0.1),
-            qmaxinst=widgets.FloatSlider(pdf_config.qmaxinst, min=0.0, max=qlim, step=0.1),
-            lowessf=widgets.FloatSlider(pdf_config.lowessf, min=0.0, max=0.2, step=0.01),
-            qcutoff=widgets.FloatSlider(pdf_config.qcutoff, min=0.0, max=qlim, step=0.1),
-            endzero=widgets.Checkbox(pdf_config.endzero)
+            rpoly=widgets.FloatSlider(config.rpoly, min=0., max=5., step=0.05),
+            qmin=widgets.FloatSlider(config.qmin, min=0., max=5., step=0.05),
+            qmax=widgets.FloatSlider(config.qmax, min=0., max=qlim, step=0.1),
+            qmaxinst=widgets.FloatSlider(config.qmaxinst, min=0.0, max=qlim, step=0.1),
+            lowessf=widgets.FloatSlider(config.lowessf, min=0.0, max=0.2, step=0.01),
+            qcutoff=widgets.FloatSlider(config.qcutoff, min=0.0, max=qlim, step=0.1),
+            endzero=widgets.Checkbox(config.endzero)
         )
         return
 
