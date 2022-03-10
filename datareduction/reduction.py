@@ -20,6 +20,7 @@ from ipywidgets import interact
 from pkg_resources import resource_filename
 from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 from tifffile import TiffWriter
+from matplotlib.lines import Line2D
 
 from datareduction import __version__
 from datareduction.vend import mask_img, generate_binner
@@ -600,22 +601,20 @@ class ReductionCalculator:
 
     def interact_fq(
             self,
-            index: int = 0,
             chi_name: str = "I",
             q_name: str = "Q",
             c_name: str = "composition_string"
     ):
         """Interactive plot of F(Q)."""
-        i = self.dataset[chi_name][index]
-        q = i[q_name]
         mpg = self.mypdfgetter
         config: MyPDFConfig = mpg.config
-        if c_name in self.dataset:
-            config.composition = self.dataset[c_name].data[index]
         pdf_config = self.config.pdf
         label = self.config.label
+        qlim = np.max(self.dataset[q_name].values)
+        n_data = self.dataset[chi_name].shape[0]
 
         def func(
+                index,
                 rpoly,
                 qmin,
                 qmax,
@@ -624,6 +623,10 @@ class ReductionCalculator:
                 qcutoff,
                 endzero
         ):
+            i = self.dataset[chi_name][index]
+            q = i[q_name]
+            if c_name in self.dataset:
+                config.composition = self.dataset[c_name].data[index]
             config.rpoly = rpoly
             config.qmin = qmin
             config.qmax = qmax
@@ -634,16 +637,18 @@ class ReductionCalculator:
             _, g = mpg.__call__(q, i)
             q1, f1 = mpg.t[-3].xout, mpg.t[-3].yout
             q2, f2 = mpg.t[-2].xout, mpg.t[-2].yout
-            ax: plt.Axes = plt.subplots()[1]
-            ax.plot(q1, f1)
-            ax.plot(q2, f2)
+            fig, ax = plt.subplots()
+            fig: plt.Figure
+            ax: plt.Axes
             ax.set_xlabel("{} [{}]".format(label.Q, label.QU))
             ax.set_ylabel("{} [{}]".format(label.F, label.FU))
-            plt.pause(0.1)
+            ax.plot(q1, f1)
+            ax.plot(q2, f2)
+            return
 
-        qlim = np.max(q.values)
         interact(
             func,
+            index=widgets.IntSlider(0, min=0, max=n_data - 1, step=1),
             rpoly=widgets.FloatSlider(pdf_config.rpoly, min=0., max=5., step=0.05),
             qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=5., step=0.05),
             qmax=widgets.FloatSlider(pdf_config.qmax, min=0., max=qlim, step=0.1),
