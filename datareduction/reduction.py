@@ -145,7 +145,7 @@ class LabelConfig:
 class IOConfig:
     output_dir: str = r"./"
     fname_template: str = r"{sample_name}"
-    data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name"])
+    data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name", "composition_string"])
     dataset_file: str = r"./dataset.nc"
     io_format: str = "NETCDF4"
     io_engine: str = "netcdf4"
@@ -543,7 +543,8 @@ class ReductionCalculator:
             chi_name: str = "I",
             q_name: str = "Q",
             g_name: str = "G",
-            r_name: str = "r"
+            r_name: str = "r",
+            c_name: str = "composition_string"
     ):
         """Transform the I(Q) to G(r)."""
         ds = self.dataset
@@ -551,14 +552,16 @@ class ReductionCalculator:
         x = ds[q_name].data
         mpg = self.mypdfgetter
 
-        def func(y):
+        def func(y, c):
+            mpg.config.composition = c
             _, yout = mpg.__call__(x, y)
             return yout
 
         g = xr.apply_ufunc(
             func,
             ds[chi_name],
-            input_core_dims=[[q_name]],
+            df[c_name],
+            input_core_dims=[[q_name], []],
             output_core_dims=[[r_name]],
             exclude_dims={q_name},
             vectorize=True,
@@ -577,13 +580,15 @@ class ReductionCalculator:
             self,
             index: int = 0,
             chi_name: str = "I",
-            q_name: str = "Q"
+            q_name: str = "Q",
+            c_name: str = "composition_string"
     ):
         """Interactive plot of F(Q)."""
         i = self.dataset[chi_name][index]
         q = i[q_name]
         mpg = self.mypdfgetter
         config: MyPDFConfig = mpg.config
+        config.composition = self.dataset[c_name].data[index]
         pdf_config = self.config.pdf
         label = self.config.label
 
@@ -614,7 +619,7 @@ class ReductionCalculator:
             plt.pause(0.1)
 
         qlim = np.max(q.values)
-        return interact(
+        interact(
             func,
             rpoly=widgets.FloatSlider(pdf_config.rpoly, min=0., max=5., step=0.05),
             qmin=widgets.FloatSlider(pdf_config.qmin, min=0., max=5., step=0.05),
@@ -624,6 +629,7 @@ class ReductionCalculator:
             qcutoff=widgets.FloatSlider(pdf_config.qcutoff, min=0.0, max=qlim, step=0.1),
             endzero=widgets.Checkbox(pdf_config.endzero)
         )
+        return
 
     def get_I(
             self,
