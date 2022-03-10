@@ -612,6 +612,8 @@ class ReductionCalculator:
         label = self.config.label
         qlim = np.max(self.dataset[q_name].values)
         n_data = self.dataset[chi_name].shape[0]
+        t1 = mpg.getTransformation("fq")
+        t2 = mpg.getTransformation("lsfq")
 
         def func(
                 index,
@@ -635,15 +637,13 @@ class ReductionCalculator:
             config.qcutoff = qcutoff
             config.endzero = endzero
             _, g = mpg.__call__(q, i)
-            q1, f1 = mpg.t[-3].xout, mpg.t[-3].yout
-            q2, f2 = mpg.t[-2].xout, mpg.t[-2].yout
             fig, ax = plt.subplots()
             fig: plt.Figure
             ax: plt.Axes
             ax.set_xlabel("{} [{}]".format(label.Q, label.QU))
             ax.set_ylabel("{} [{}]".format(label.F, label.FU))
-            ax.plot(q1, f1)
-            ax.plot(q2, f2)
+            ax.plot(t1.xout, t1.yout)
+            ax.plot(t2.xout, t2.yout)
             return
 
         interact(
