@@ -565,10 +565,11 @@ class ReductionCalculator:
             output_core_dims=[[r_name]],
             exclude_dims={q_name},
             vectorize=True,
-            dask="parallelized",
             output_dtypes=[np.float]
         )
         r = xr.DataArray(mpg.gr[0], dims=[r_name])
+        if r_name in ds:
+            ds = ds.drop_dims(r_name)
         ds = ds.assign_coords({r_name: r})
         ds = ds.assign({g_name: g})
         ds[r_name].attrs = {"units": label.rU, "standard_name": label.r}
