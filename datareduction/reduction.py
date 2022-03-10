@@ -610,7 +610,8 @@ class ReductionCalculator:
         q = i[q_name]
         mpg = self.mypdfgetter
         config: MyPDFConfig = mpg.config
-        config.composition = self.dataset[c_name].data[index]
+        if c_name in self.dataset:
+            config.composition = self.dataset[c_name].data[index]
         pdf_config = self.config.pdf
         label = self.config.label
 
