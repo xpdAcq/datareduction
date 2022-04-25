@@ -570,7 +570,7 @@ class ReductionCalculator:
             chi = ds[chi_name].values
             q = ds[q_name].values
             if c_name in ds:
-                mpg.config.composition = ds[c_name].values[0]
+                mpg.config.composition = ds[c_name].item()
             r, g = mpg.__call__(q, chi)
             yield xr.Dataset(
                 {g_name: ([r_name], g)},
