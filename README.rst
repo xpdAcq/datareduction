@@ -14,13 +14,17 @@ Data reduction from databroker to xarray.
 Installation
 ------------
 
-Open a terminal and run the command below.
+Open a terminal and run the command below to clone the repo.
 
-```
-git clone https://github.com/xpdAcq/datareduction.git
-cd datareduction
-bash install.sh
-```
+``git clone https://github.com/xpdAcq/datareduction.git``
+
+Change directory to the repo.
+
+``cd datareduction``
+
+Run the installation script.
+
+``bash install.sh``
 
 It will start an interactive session for installation.
 
