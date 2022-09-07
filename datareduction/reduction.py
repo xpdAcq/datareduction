@@ -20,10 +20,9 @@ from ipywidgets import interact
 from pkg_resources import resource_filename
 from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 from tifffile import TiffWriter
-from matplotlib.lines import Line2D
 
 from datareduction import __version__
-from datareduction.vend import mask_img, generate_binner
+from datareduction.vend import generate_binner, mask_img
 
 NI_DSPACING_TXT = resource_filename("datareduction", "data/Ni_dspacing.txt")
 NI_CIF_FILE = resource_filename("datareduction", "data/Ni_cif_file.cif")
@@ -46,23 +45,28 @@ class MyPDFConfig(PDFConfig):
         self.lowessf = 0.04
         self.endzero = True
         self.dataformat = "QA"
-        self.qmin = 0.
+        self.qmin = 0.0
         self.qmaxinst = 24.0
         self.qmax = 22.0
         self.composition = "Ni"
 
 
-def smooth(xin: np.ndarray, yin: np.ndarray, xcutoff: float, lowessf: float, endzero: bool) -> typing.Tuple[
-    np.ndarray, np.ndarray]:
-    """Smooth the input data in region x >= xcutoff using lowessf parameter. If endzero True, terminate the data to the last zero point."""
+def smooth(
+    xin: np.ndarray, yin: np.ndarray,
+    xcutoff: float, lowessf: float, endzero: bool
+) -> typing.Tuple[np.ndarray, np.ndarray]:
+    """Smooth the input data in region x >= xcutoff using lowessf
+    parameter. If endzero True, terminate the data to the last zero point."""
     xout, yout = xin.copy(), yin.copy()
     cutoff = np.searchsorted(xin, xcutoff) + 1
     if cutoff < xin.shape[0]:
-        xout[cutoff:], yout[cutoff:] = smoothers_lowess.lowess(yin[cutoff:], xin[cutoff:], frac=lowessf).T
+        xout[cutoff:], yout[cutoff:] = smoothers_lowess.lowess(
+            yin[cutoff:], xin[cutoff:], frac=lowessf
+        ).T
     if endzero:
         # first element with a different sign
         ind = np.argmin(np.sign(yout[-1] * yout[::-1]))
-        xout, yout = xout[:xout.shape[0] - ind], yout[:yout.shape[0] - ind]
+        xout, yout = xout[: xout.shape[0] - ind], yout[: yout.shape[0] - ind]
     return xout, yout
 
 
@@ -86,11 +90,18 @@ class LowessTransform(Transformation):
 
     def checkConfig(self):
         if not isinstance(self.config, MyPDFConfig):
-            raise PDFConfigError("The config for LowessTransform must be LowessPDFConfig.")
+            raise PDFConfigError(
+                "The config for LowessTransform must be LowessPDFConfig."
+            )
 
     def transform(self):
-        self.xout, self.yout = smooth(self.xin, self.yin, self.config.qcutoff, self.config.lowessf,
-                                      self.config.endzero)
+        self.xout, self.yout = smooth(
+            self.xin,
+            self.yin,
+            self.config.qcutoff,
+            self.config.lowessf,
+            self.config.endzero,
+        )
 
 
 class MyPDFGetter(PDFGetter):
@@ -106,7 +117,7 @@ class MaskConfig:
     edge: int = 30
     lower_thresh: float = 0.0
     upper_thresh: float = None
-    alpha: float = 2.
+    alpha: float = 2.0
     auto_type: str = "median"
     tmsk: np.ndarray = None
 
@@ -115,7 +126,7 @@ class MaskConfig:
 class IntegrationConfig:
     npt: int = 3001
     correctSolidAngle: bool = False
-    dummy: float = 0.
+    dummy: float = 0.0
     unit: str = "q_A^-1"
     safe: bool = False
     polarization_factor: float = 0.99
@@ -124,7 +135,7 @@ class IntegrationConfig:
 
 @dataclass
 class BackgroundConfig:
-    scale: float = 1.
+    scale: float = 1.0
 
 
 @dataclass
@@ -146,7 +157,9 @@ class LabelConfig:
 class IOConfig:
     output_dir: str = r"./"
     fname_template: str = r"{sample_name}"
-    data_keys: typing.List[str] = field(default_factory=lambda: ["sample_name", "composition_string"])
+    data_keys: typing.List[str] = field(
+        default_factory=lambda: ["sample_name", "composition_string"]
+    )
     dataset_file: str = r"./dataset.nc"
     io_format: str = "NETCDF4"
     io_engine: str = "netcdf4"
@@ -179,7 +192,6 @@ class ReductionConfig:
 
 
 class ReductionCalculator:
-
     def __init__(self, config: ReductionConfig):
         self.config: ReductionConfig = config
         self.dataset: xr.Dataset = xr.Dataset()
@@ -203,11 +215,15 @@ class ReductionCalculator:
         self.dark_dataset = dataset
         return
 
-    def set_bkg_dataset(self, dataset: typing.Optional[xr.Dataset], squeeze: bool = True) -> None:
+    def set_bkg_dataset(
+        self, dataset: typing.Optional[xr.Dataset], squeeze: bool = True
+    ) -> None:
         self.bkg_dataset = dataset.squeeze() if squeeze else dataset
         return
 
-    def bkg_img_subtract(self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")) -> None:
+    def bkg_img_subtract(
+        self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
+    ) -> None:
         corrected = xr.apply_ufunc(
             np.subtract,
             self.dataset[image_name],
@@ -215,17 +231,13 @@ class ReductionCalculator:
             input_core_dims=[image_dims, image_dims],
             output_core_dims=[image_dims],
             dask="parallelized",
-            output_dtypes=[np.float]
+            output_dtypes=[np.float],
         )
         self.dataset = self.dataset.assign({image_name: corrected})
         return
 
     @staticmethod
-    def _average(
-            ds: xr.Dataset,
-            image_name: str,
-            along: typing.Sequence[str]
-    ):
+    def _average(ds: xr.Dataset, image_name: str, along: typing.Sequence[str]):
         n = len(along)
         averaged = xr.apply_ufunc(
             np.mean,
@@ -234,65 +246,34 @@ class ReductionCalculator:
             exclude_dims=set(along),
             kwargs={"axis": tuple(range(-n, 0))},
             dask="parallelized",
-            output_dtypes=[np.float]
+            output_dtypes=[np.float],
         )
         ds = ds.assign({image_name: averaged})
         return ds
 
     def average_dark(
-            self,
-            image_name: str,
-            along: typing.Sequence[str] = ("time", "dim_0")
+        self, image_name: str, along: typing.Sequence[str] = ("time", "dim_0")
     ):
-        self.dark_dataset = self._average(
-            self.dark_dataset,
-            image_name,
-            along
-        )
+        self.dark_dataset = self._average(self.dark_dataset, image_name, along)
         return
 
     def average_bkg_dark(
-            self,
-            image_name: str,
-            along: typing.Sequence[str] = ("time", "dim_0")
+        self, image_name: str, along: typing.Sequence[str] = ("time", "dim_0")
     ):
-        self.bkg_dark_dataset = self._average(
-            self.bkg_dark_dataset,
-            image_name,
-            along
-        )
+        self.bkg_dark_dataset = self._average(self.bkg_dark_dataset, image_name, along)
         return
 
     def average_bkg(
-            self,
-            image_name: str,
-            along: typing.Sequence[str] = ("time", "dim_0")
+        self, image_name: str, along: typing.Sequence[str] = ("time", "dim_0")
     ):
-        self.bkg_dataset = self._average(
-            self.bkg_dataset,
-            image_name,
-            along
-        )
+        self.bkg_dataset = self._average(self.bkg_dataset, image_name, along)
 
-    def average(
-            self,
-            image_name: str,
-            along: typing.Sequence[str] = ("dim_0",)
-    ):
-        self.dataset = self._average(
-            self.dataset,
-            image_name,
-            along
-        )
+    def average(self, image_name: str, along: typing.Sequence[str] = ("dim_0",)):
+        self.dataset = self._average(self.dataset, image_name, along)
         return
 
     @staticmethod
-    def _dark_subtract(
-            ds,
-            dark_ds,
-            image_name: str,
-            image_dims: typing.Sequence[str]
-    ):
+    def _dark_subtract(ds, dark_ds, image_name: str, image_dims: typing.Sequence[str]):
         corrected = xr.apply_ufunc(
             np.subtract,
             ds[image_name],
@@ -300,40 +281,28 @@ class ReductionCalculator:
             input_core_dims=[image_dims, image_dims],
             output_core_dims=[image_dims],
             dask="parallelized",
-            output_dtypes=[np.float]
+            output_dtypes=[np.float],
         )
         ds = ds.assign({image_name: corrected})
         return ds
 
     def dark_subtract(
-            self,
-            image_name: str,
-            image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
+        self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
     ):
         self.dataset = self._dark_subtract(
-            self.dataset,
-            self.dark_dataset,
-            image_name,
-            image_dims
+            self.dataset, self.dark_dataset, image_name, image_dims
         )
         return
 
     def dark_subtract_bkg(
-            self,
-            image_name: str,
-            image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
+        self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
     ):
         self.bkg_dataset = self._dark_subtract(
-            self.bkg_dataset,
-            self.bkg_dark_dataset,
-            image_name,
-            image_dims
+            self.bkg_dataset, self.bkg_dark_dataset, image_name, image_dims
         )
 
     def mask(
-            self,
-            image_name: str,
-            image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
+        self, image_name: str, image_dims: typing.Sequence[str] = ("dim_1", "dim_2")
     ) -> None:
         ds = self.dataset
         ai = self.config.geometry
@@ -349,19 +318,19 @@ class ReductionCalculator:
             output_core_dims=[image_dims],
             vectorize=True,
             dask="parallelized",
-            output_dtypes=[np.float]
+            output_dtypes=[np.float],
         )
         ds = ds.assign({image_name: ds[image_name] * mask})
         self.dataset = ds
         return
 
     def _integrate(
-            self,
-            ds: xr.Dataset,
-            image_name: str,
-            image_dims: typing.Tuple[str, str],
-            chi_name: str,
-            q_name: str
+        self,
+        ds: xr.Dataset,
+        image_name: str,
+        image_dims: typing.Tuple[str, str],
+        chi_name: str,
+        q_name: str,
     ) -> xr.Dataset:
         ai = self.config.geometry
         exe = self.executor
@@ -377,7 +346,7 @@ class ReductionCalculator:
             q = res[0, 0, :]
             i = res[:, 1, :]
         else:
-            res = ai.integrate1d(images_data, **kwargs)
+            res = ai.integrate1d(images.data, **kwargs)
             q = res[0]
             i = res[1]
         dims = other_dims + (q_name,)
@@ -386,43 +355,35 @@ class ReductionCalculator:
         return ds
 
     def integrate(
-            self,
-            image_name: str,
-            image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
-            chi_name: str = "I",
-            q_name: str = "Q"
+        self,
+        image_name: str,
+        image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
+        chi_name: str = "I",
+        q_name: str = "Q",
     ):
         """Integrate the image to I(Q)."""
         self.dataset = self._integrate(
-            self.dataset,
-            image_name,
-            image_dims,
-            chi_name,
-            q_name
+            self.dataset, image_name, image_dims, chi_name, q_name
         )
         return
 
     def integrate_bkg(
-            self,
-            image_name: str,
-            image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
-            chi_name: str = "I",
-            q_name: str = "Q"
+        self,
+        image_name: str,
+        image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
+        chi_name: str = "I",
+        q_name: str = "Q",
     ):
         self.bkg_dataset = self._integrate(
-            self.bkg_dataset,
-            image_name,
-            image_dims,
-            chi_name,
-            q_name
+            self.bkg_dataset, image_name, image_dims, chi_name, q_name
         )
 
     def mask_and_integrate(
-            self,
-            image_name: str,
-            image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
-            chi_name: str = "I",
-            q_name: str = "Q"
+        self,
+        image_name: str,
+        image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
+        chi_name: str = "I",
+        q_name: str = "Q",
     ) -> None:
         ds = self.dataset
         ai = self.config.geometry
@@ -432,7 +393,9 @@ class ReductionCalculator:
         shape = [ds.sizes[d] for d in image_dims]
         mask_kwargs["binner"] = generate_binner(ai, shape)
         integ_kwargs = dc.asdict(ic)
-        gen = self._mask_and_integrate(image_name, image_dims, chi_name, q_name, mask_kwargs, integ_kwargs)
+        gen = self._mask_and_integrate(
+            image_name, image_dims, chi_name, q_name, mask_kwargs, integ_kwargs
+        )
         chi: xr.Dataset = xr.merge(gen)
         self.dataset = self.dataset.drop_dims(image_dims).update(chi)
         label = self.config.label
@@ -443,7 +406,9 @@ class ReductionCalculator:
 
     def save(self):
         f = pathlib.PurePath(self.config.io.dataset_file)
-        self.dataset.to_netcdf(str(f), engine=self.config.io.io_engine, format=self.config.io.io_format)
+        self.dataset.to_netcdf(
+            str(f), engine=self.config.io.io_engine, format=self.config.io.io_format
+        )
         return
 
     def load(self):
@@ -452,39 +417,36 @@ class ReductionCalculator:
         return
 
     def _mask_and_integrate(
-            self,
-            image_name: str,
-            image_dims: typing.Tuple[str, str],
-            chi_name: str,
-            q_name: str,
-            mask_kwargs: dict,
-            integ_kwargs: dict
+        self,
+        image_name: str,
+        image_dims: typing.Tuple[str, str],
+        chi_name: str,
+        q_name: str,
+        mask_kwargs: dict,
+        integ_kwargs: dict,
     ) -> typing.Generator[xr.Dataset, None, None]:
         ai = self.config.geometry
         for coords, image in self._gen_image(image_name, image_dims):
             mask = mask_img(image, **mask_kwargs)
             q, chi = ai.integrate1d(image, **integ_kwargs, mask=1 - mask)
-            ds = xr.Dataset(
-                {chi_name: ([q_name], chi)},
-                {q_name: q}
-            ).assign_coords(
-                coords
-            ).expand_dims(
-                list(coords.keys())
+            ds = (
+                xr.Dataset({chi_name: ([q_name], chi)}, {q_name: q})
+                .assign_coords(coords)
+                .expand_dims(list(coords.keys()))
             )
             yield ds
         return
 
     def _gen_image(
-            self,
-            image_name: str,
-            image_dims: typing.Tuple[str, str]
+        self, image_name: str, image_dims: typing.Tuple[str, str]
     ) -> typing.Generator[typing.Tuple[dict, np.ndarray], None, None]:
         arr = self.dataset[image_name]
         other_dims = set(arr.dims) - set(image_dims)
         sizes = [arr.sizes[d] for d in other_dims]
         idxs = np.stack([np.ravel(i) for i in np.indices(sizes)]).transpose()
-        gen = tqdm.tqdm(idxs, disable=(self.config.verbose <= 0), desc="Images", leave=False)
+        gen = tqdm.tqdm(
+            idxs, disable=(self.config.verbose <= 0), desc="Images", leave=False
+        )
         for idx in gen:
             image = arr.isel(dict(zip(other_dims, idx))).compute()
             coords = {k: image.coords[k] for k in other_dims if k in image.coords}
@@ -492,11 +454,7 @@ class ReductionCalculator:
         gen.close()
         return
 
-    def bkg_subtract(
-            self,
-            chi_name: str = "I",
-            q_name: str = "Q"
-    ):
+    def bkg_subtract(self, chi_name: str = "I", q_name: str = "Q"):
         """Background subtraction."""
         scale = self.config.background.scale
         ds = self.dataset
@@ -508,17 +466,12 @@ class ReductionCalculator:
             input_core_dims=[[q_name], [q_name]],
             output_core_dims=[[q_name]],
             dask="parallelized",
-            output_dtypes=[np.float]
+            output_dtypes=[np.float],
         )
-        self.dataset = self.dataset.assign(
-            {chi_name: subtracted}
-        ).compute()
+        self.dataset = self.dataset.assign({chi_name: subtracted}).compute()
         return
 
-    def img_bkg_subtract(
-            self,
-            image_name: str
-    ):
+    def img_bkg_subtract(self, image_name: str):
         """Background subtraction on image level."""
         scale = self.config.background.scale
         ds = self.dataset
@@ -526,9 +479,7 @@ class ReductionCalculator:
         attrs = ds[image_name].attrs
         subtracted = ds[image_name] - bkg_ds[image_name] * xr.DataArray(scale)
         subtracted.attrs = attrs
-        self.dataset = self.dark_dataset.assign(
-            {image_name: subtracted}
-        )
+        self.dataset = self.dark_dataset.assign({image_name: subtracted})
         return
 
     def find_bkg_and_subtract(self, bkg_condition: xr.DataArray) -> None:
@@ -540,12 +491,12 @@ class ReductionCalculator:
         return
 
     def get_G(
-            self,
-            chi_name: str = "I",
-            q_name: str = "Q",
-            g_name: str = "G",
-            r_name: str = "r",
-            c_name: str = "composition_string"
+        self,
+        chi_name: str = "I",
+        q_name: str = "Q",
+        g_name: str = "G",
+        r_name: str = "r",
+        c_name: str = "composition_string",
     ):
         """Transform the I(Q) to G(r)."""
         label = self.config.label
@@ -558,12 +509,7 @@ class ReductionCalculator:
         return
 
     def _gen_gr(
-            self,
-            g_name: str,
-            r_name: str,
-            chi_name: str,
-            q_name: str,
-            c_name: str
+        self, g_name: str, r_name: str, chi_name: str, q_name: str, c_name: str
     ) -> typing.Generator[xr.Dataset, None, None]:
         mpg = self.mypdfgetter
         for coords, ds in self._gen_data_along_q(chi_name, q_name):
@@ -572,20 +518,13 @@ class ReductionCalculator:
             if c_name in ds:
                 mpg.config.composition = ds[c_name].item()
             r, g = mpg.__call__(q, chi)
-            yield xr.Dataset(
-                {g_name: ([r_name], g)},
-                {r_name: r}
-            ).assign_coords(
+            yield xr.Dataset({g_name: ([r_name], g)}, {r_name: r}).assign_coords(
                 coords
-            ).expand_dims(
-                list(coords.keys())
-            )
+            ).expand_dims(list(coords.keys()))
         return
 
     def _gen_data_along_q(
-            self,
-            chi_name: str,
-            q_name: str
+        self, chi_name: str, q_name: str
     ) -> typing.Generator[typing.Tuple[dict, xr.Dataset], None, None]:
         arr = self.dataset[chi_name]
         other_dims = set(arr.dims) - {q_name}
@@ -600,10 +539,7 @@ class ReductionCalculator:
         return
 
     def interact_fq(
-            self,
-            chi_name: str = "I",
-            q_name: str = "Q",
-            c_name: str = "composition_string"
+        self, chi_name: str = "I", q_name: str = "Q", c_name: str = "composition_string"
     ):
         """Interactive plot of F(Q)."""
         config = self.config.pdf
@@ -615,16 +551,7 @@ class ReductionCalculator:
         t1 = mpg.getTransformation("fq")
         t2 = mpg.getTransformation("lsfq")
 
-        def func(
-                index,
-                rpoly,
-                qmin,
-                qmax,
-                qmaxinst,
-                lowessf,
-                qcutoff,
-                endzero
-        ):
+        def func(index, rpoly, qmin, qmax, qmaxinst, lowessf, qcutoff, endzero):
             i = self.dataset[chi_name][index]
             q = i[q_name]
             if c_name in self.dataset:
@@ -649,27 +576,27 @@ class ReductionCalculator:
         interact(
             func,
             index=widgets.IntSlider(0, min=0, max=n_data - 1, step=1),
-            rpoly=widgets.FloatSlider(config.rpoly, min=0., max=5., step=0.05),
-            qmin=widgets.FloatSlider(config.qmin, min=0., max=5., step=0.05),
-            qmax=widgets.FloatSlider(config.qmax, min=0., max=qlim, step=0.1),
+            rpoly=widgets.FloatSlider(config.rpoly, min=0.0, max=5.0, step=0.05),
+            qmin=widgets.FloatSlider(config.qmin, min=0.0, max=5.0, step=0.05),
+            qmax=widgets.FloatSlider(config.qmax, min=0.0, max=qlim, step=0.1),
             qmaxinst=widgets.FloatSlider(config.qmaxinst, min=0.0, max=qlim, step=0.1),
             lowessf=widgets.FloatSlider(config.lowessf, min=0.0, max=0.2, step=0.01),
             qcutoff=widgets.FloatSlider(config.qcutoff, min=0.0, max=qlim, step=0.1),
-            endzero=widgets.Checkbox(config.endzero)
+            endzero=widgets.Checkbox(config.endzero),
         )
         return
 
     def get_I(
-            self,
-            image_name: str,
-            chi_name: str = "I",
-            q_name: str = "Q",
-            avg_along: typing.Sequence[str] = ("dim_0",),
-            dark_avg_along: typing.Sequence[str] = ("time", "dim_0"),
-            bkg_avg_along: typing.Sequence[str] = ("time", "dim_0"),
-            image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
-            process_image: bool = True,
-            drop_image: bool = True
+        self,
+        image_name: str,
+        chi_name: str = "I",
+        q_name: str = "Q",
+        avg_along: typing.Sequence[str] = ("dim_0",),
+        dark_avg_along: typing.Sequence[str] = ("time", "dim_0"),
+        bkg_avg_along: typing.Sequence[str] = ("time", "dim_0"),
+        image_dims: typing.Tuple[str, str] = ("dim_1", "dim_2"),
+        process_image: bool = True,
+        drop_image: bool = True,
     ):
         """Dark subtraction and integrate the dark subtracted image to I(Q)."""
         if process_image:
@@ -697,8 +624,7 @@ class ReductionCalculator:
         return
 
     def reset_dims(
-            self,
-            dim2dims: typing.Dict[str, typing.List[str]],
+        self, dim2dims: typing.Dict[str, typing.List[str]],
     ):
         """Reset the dimension of the dataset."""
         self.dataset = self._reset_dims(self.dataset, dim2dims)
@@ -731,8 +657,7 @@ class ReductionCalculator:
 
     @staticmethod
     def _reset_dims(
-            ds: xr.Dataset,
-            dim2dims: typing.Dict[str, typing.List[str]]
+        ds: xr.Dataset, dim2dims: typing.Dict[str, typing.List[str]]
     ) -> xr.Dataset:
         # set new dims
         old_dims = list(dim2dims.keys())
@@ -766,11 +691,9 @@ class ReductionCalculator:
         self.config.geometry = pyFAI.load(poni_file)
         return
 
-    def run_calib(
-            self,
-            tiff_file: str
-    ) -> None:
+    def run_calib(self, tiff_file: str) -> None:
         import pdffitx.io as io
+
         wavelength = self.config.calibration.wavelength
         calibrant = self.config.calibration.calibrant
         detector = self.config.calibration.detector
@@ -783,7 +706,9 @@ class ReductionCalculator:
         if detector:
             args.extend(["--detector", str(detector)])
         args.append(tiff_file)
-        cp = subprocess.run(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        cp = subprocess.run(
+            args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
         if cp.returncode != 0:
             io.server_message("Error in Calibration. See below:")
             print(r"$", " ".join(args))
@@ -799,8 +724,10 @@ class ReductionCalculator:
         return lst
 
     def run_fit(self) -> None:
+        from objcryst import load_crystal
         from pdffitx.model import MultiPhaseModel
-        ni = io.load_crystal(self.config.calibration.structure)
+
+        ni = load_crystal(self.config.calibration.structure)
         mpm = MultiPhaseModel(equation="Standard", structures={"Standard": ni})
         g = mpm.get_generators().get("Standard")
         recipe = mpm.get_recipe()
@@ -816,7 +743,7 @@ class ReductionCalculator:
             xmax=self.config.calibration.xmax,
             xstep=self.config.calibration.xstep,
             progress_bar=False,
-            exclude_vars=["Q", "I"]
+            exclude_vars=["Q", "I"],
         )
         self.fit_dataset = xr.merge(results)
         return
@@ -854,8 +781,11 @@ class ReductionCalculator:
             self.run_fit()
             ds = self.fit_dataset.copy()
             w = float(self.config.geometry.wavelength) * 1e10
-            ds = ds.assign_coords({"wavelength": (["time"], [w])}).swap_dims({"time": "wavelength"}).drop_vars(
-                "time")
+            ds = (
+                ds.assign_coords({"wavelength": (["time"], [w])})
+                .swap_dims({"time": "wavelength"})
+                .drop_vars("time")
+            )
             dss.append(ds)
         self.calib_result = xr.merge(dss)
         self.calib_result = self.calib_result.sortby("wavelength")
@@ -863,17 +793,15 @@ class ReductionCalculator:
         return
 
     def update_calib_result_attrs(self) -> None:
-        self.calib_result["rw"].attrs.update(
-            {"standard_name": "$R_w$"}
-        )
+        self.calib_result["rw"].attrs.update({"standard_name": r"$R_w$"})
         self.calib_result["qdamp"].attrs.update(
-            {"standard_name": "Q$_{damp}$", "units": "$\mathrm{\AA}^{-1}$"}
+            {"standard_name": "Q$_{damp}$", "units": r"$\mathrm{\AA}^{-1}$"}
         )
         self.calib_result["qbroad"].attrs.update(
-            {"standard_name": "Q$_{broad}$", "units": "$\mathrm{\AA}^{-1}$"}
+            {"standard_name": "Q$_{broad}$", "units": r"$\mathrm{\AA}^{-1}$"}
         )
         self.calib_result["wavelength"].attrs.update(
-            {"standard_name": "wavelength", "units": "$\mathrm{\AA}$"}
+            {"standard_name": "wavelength", "units": r"$\mathrm{\AA}$"}
         )
         return
 
@@ -897,7 +825,6 @@ class DataProcessConfig:
 
 
 class DataProcessor:
-
     def __init__(self, config: DataProcessConfig):
         self.config = config
         self.rc = ReductionCalculator(self.config.reduction)
@@ -1018,7 +945,9 @@ class DataProcessor:
     def _assign_sample_data(self) -> None:
         start = self._cached_start
         n = self.rc.dataset.dims["time"]
-        sample_data = {k: ("time", [start[k]] * n) for k in self.config.database.sample_data_keys}
+        sample_data = {
+            k: ("time", [start[k]] * n) for k in self.config.database.sample_data_keys
+        }
         self.rc.dataset = self.rc.dataset.assign(sample_data)
         return
 
