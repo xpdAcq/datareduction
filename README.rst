@@ -11,7 +11,20 @@ Data reduction from databroker to xarray.
 * Free software: 3-clause BSD license
 * Documentation: (COMING SOON!) https://st3107.github.io/datareduction.
 
-Features
---------
+Installation
+------------
 
-* TODO
+Open a terminal and run the command below.
+
+```
+git clone https://github.com/xpdAcq/datareduction.git
+cd datareduction
+bash install.sh
+```
+
+It will start an interactive session for installation.
+
+Example
+-------
+
+Here is `an example note book <examples/from_database_to_xarray.ipynb>`_ about how to use it.
